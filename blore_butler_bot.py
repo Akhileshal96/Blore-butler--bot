@@ -1,9 +1,11 @@
 import telebot
 import json
 import os
+import openpyxl
 
 TOKEN = '7817780868:AAEd39YD3hDr1JAsQTCmeN9hgrMAtAHnKe4'
-GROUP_USERNAME = 'BangaloreMeetups'  # Group username without '@'
+GROUP_USERNAME = 'bangloree'  # Group username without '@'
+GROUP_ID = -1001518197115  # Use the actual group ID to verify membership
 bot = telebot.TeleBot(TOKEN)
 
 user_states = {}
@@ -15,30 +17,30 @@ if os.path.exists(ADMINS_FILE):
     with open(ADMINS_FILE, 'r') as f:
         ADMINS = json.load(f)
 else:
-    ADMINS = []
+    ADMINS = ['728623146']
     with open(ADMINS_FILE, 'w') as f:
         json.dump(ADMINS, f)
 
-# Save data (simulate Excel or DB save here)
+# Excel file setup
+EXCEL_FILE = 'registrations.xlsx'
+if not os.path.exists(EXCEL_FILE):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['Telegram ID', 'Telegram Name', 'Full Name', 'Phone Number'])
+    wb.save(EXCEL_FILE)
+
+# Save data to Excel
 def save_registration(user_id, data):
-    file = 'registrations.json'
-    try:
-        if os.path.exists(file):
-            with open(file, 'r') as f:
-                records = json.load(f)
-        else:
-            records = []
-        records.append(data)
-        with open(file, 'w') as f:
-            json.dump(records, f, indent=2)
-    except Exception as e:
-        print(f"Error saving: {e}")
+    wb = openpyxl.load_workbook(EXCEL_FILE)
+    ws = wb.active
+    ws.append([user_id, data['telegram'], data['name'], data['phone']])
+    wb.save(EXCEL_FILE)
 
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     user_id = message.from_user.id
     try:
-        member = bot.get_chat_member(f"@{GROUP_USERNAME}", user_id)
+        member = bot.get_chat_member(GROUP_ID, user_id)
         if member.status not in ['member', 'administrator', 'creator']:
             bot.send_message(message.chat.id, "🚫 You must be a member of the Bangalore Meetups group to register.")
             return
@@ -71,5 +73,18 @@ def handle_phone(message):
     save_registration(user_id, user_data[user_id])
     bot.send_message(message.chat.id, "🎉 Thank you! Your registration is complete.")
     user_states.pop(user_id, None)
+
+@bot.message_handler(commands=['download'])
+def download_excel(message):
+    user_id = str(message.from_user.id)
+    if user_id not in ADMINS:
+        bot.send_message(message.chat.id, "🚫 You are not authorized to download the registration file.")
+        return
+
+    try:
+        with open(EXCEL_FILE, 'rb') as f:
+            bot.send_document(message.chat.id, f)
+    except Exception as e:
+        bot.send_message(message.chat.id, "⚠️ Failed to send file.")
 
 bot.infinity_polling()
